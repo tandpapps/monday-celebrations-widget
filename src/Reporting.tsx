@@ -23,23 +23,26 @@ const LEAVE = {
   positionMirror: "lookup_mm64awrp",
   employee: "person",
   department: "dropdown_mm0gjq4j",
-  timeline: "timerange_mm63zfet",
   previousBalance: "numeric_mm1r7j05",
   currentBalance: "numeric_mm1rcqfy",
   approver: "multiple_person_mm0gp5hr",
-  replacement: "lookup_mm1vwk88",
 };
 
 const LEAVE_SUBITEM = {
   status: "status",
   startDate: "date_mm1rex0r",
   endDate: "date_mm1rt0nh",
+  replacement: "multiple_person_mm1rv62m",
 };
 
 type ColumnValue = {
   id: string;
-  text: string;
-  value: string | null;
+  text?: string | null;
+  value?: string | null;
+  linked_item_ids?: string[];
+  number?: number | null;
+  date?: string | null;
+  label?: string | null;
 };
 
 type MondayItem = {
@@ -65,62 +68,50 @@ type HrEmployee = {
   collaborationType: "Εσωτερικός" | "Εξωτερικός" | "Δοκιμαστική" | "Άλλο";
 };
 
+type LeavePeriod = {
+  id: string;
+  from: string;
+  to: string;
+  replacement: string;
+};
+
 type LeaveEmployee = {
   id: string;
   name: string;
   hrItemIds: string[];
   department: string;
   position: string;
-  timelineFrom: string;
-  timelineTo: string;
   previousBalance: number | null;
   currentBalance: number | null;
   totalLeave: number;
   actualBalance: number | null;
   approver: string;
-  replacement: string;
+  periods: LeavePeriod[];
 };
 
 function getColumn(item: MondayItem, id: string) {
   return item.column_values.find((column) => column.id === id);
 }
 
-function parseLinkedIds(value: string | null | undefined): string[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value) as Record<string, unknown>;
-    const candidates = [parsed.linkedPulseIds, parsed.linkedItemIds, parsed.item_ids, parsed.itemIds];
-    for (const candidate of candidates) {
-      if (Array.isArray(candidate)) return candidate.map(String);
-    }
-  } catch {
-    return [];
-  }
-  return [];
+function linkedIds(column: ColumnValue | undefined): string[] {
+  return (column?.linked_item_ids ?? []).map(String);
 }
 
-function parseDate(value: string | null | undefined): string {
-  if (!value) return "";
+function columnDate(column: ColumnValue | undefined): string {
+  if (column?.date) return column.date;
+  if (!column?.value) return "";
   try {
-    const parsed = JSON.parse(value) as { date?: string };
+    const parsed = JSON.parse(column.value) as { date?: string };
     return parsed.date ?? "";
   } catch {
     return "";
   }
 }
 
-function parseTimeline(value: string | null | undefined): { from: string; to: string } {
-  if (!value) return { from: "", to: "" };
-  try {
-    const parsed = JSON.parse(value) as { from?: string; to?: string };
-    return { from: parsed.from ?? "", to: parsed.to ?? "" };
-  } catch {
-    return { from: "", to: "" };
-  }
-}
-
-function parseNumber(text: string | undefined): number | null {
-  if (!text?.trim()) return null;
+function columnNumber(column: ColumnValue | undefined): number | null {
+  if (typeof column?.number === "number" && Number.isFinite(column.number)) return column.number;
+  const text = column?.text?.trim();
+  if (!text) return null;
   const value = Number(text.replace(",", "."));
   return Number.isFinite(value) ? value : null;
 }
@@ -141,15 +132,24 @@ function workdaysInclusive(from: string, to: string): number {
   return count;
 }
 
-function approvedLeaveDays(subitems: MondayItem[] | undefined): number {
-  if (!subitems?.length) return 0;
-  return subitems.reduce((sum, subitem) => {
-    const status = (getColumn(subitem, LEAVE_SUBITEM.status)?.text ?? "").trim().toLocaleUpperCase("en-US");
-    if (status !== "APPROVED") return sum;
-    const from = parseDate(getColumn(subitem, LEAVE_SUBITEM.startDate)?.value);
-    const to = parseDate(getColumn(subitem, LEAVE_SUBITEM.endDate)?.value);
-    return sum + workdaysInclusive(from, to);
-  }, 0);
+function approvedPeriods(subitems: MondayItem[] | undefined): LeavePeriod[] {
+  if (!subitems?.length) return [];
+  return subitems.flatMap((subitem) => {
+    const statusColumn = getColumn(subitem, LEAVE_SUBITEM.status);
+    const status = (statusColumn?.label ?? statusColumn?.text ?? "").trim().toLocaleUpperCase("en-US");
+    if (status !== "APPROVED") return [];
+
+    const from = columnDate(getColumn(subitem, LEAVE_SUBITEM.startDate));
+    const to = columnDate(getColumn(subitem, LEAVE_SUBITEM.endDate));
+    if (!from || !to) return [];
+
+    return [{
+      id: subitem.id,
+      from,
+      to,
+      replacement: getColumn(subitem, LEAVE_SUBITEM.replacement)?.text || "—",
+    }];
+  });
 }
 
 function collaborationType(groupTitle: string | undefined): HrEmployee["collaborationType"] {
@@ -170,6 +170,14 @@ function formatDate(value: string) {
 function formatNumber(value: number | null) {
   if (value === null) return "—";
   return new Intl.NumberFormat("el-GR", { maximumFractionDigits: 1 }).format(value);
+}
+
+function todayIso() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function daysUntil(value: string) {
@@ -202,7 +210,11 @@ function useReportingData() {
                     "${HR.department}", "${HR.position}", "${HR.manager}",
                     "${HR.startDate}", "${HR.location}", "${HR.employmentType}",
                     "${HR.probationEnd}", "${HR.status}", "${HR.relationToLeave}"
-                  ]) { id text value }
+                  ]) {
+                    id text value
+                    ... on BoardRelationValue { linked_item_ids }
+                    ... on DateValue { date }
+                  }
                 }
               }
             }
@@ -214,15 +226,24 @@ function useReportingData() {
                   group { id title }
                   column_values(ids: [
                     "${LEAVE.relationToHr}", "${LEAVE.positionMirror}", "${LEAVE.employee}",
-                    "${LEAVE.department}", "${LEAVE.timeline}", "${LEAVE.previousBalance}",
-                    "${LEAVE.currentBalance}", "${LEAVE.approver}", "${LEAVE.replacement}"
-                  ]) { id text value }
+                    "${LEAVE.department}", "${LEAVE.previousBalance}", "${LEAVE.currentBalance}",
+                    "${LEAVE.approver}"
+                  ]) {
+                    id text value
+                    ... on BoardRelationValue { linked_item_ids }
+                    ... on NumbersValue { number }
+                  }
                   subitems {
                     id
                     name
                     column_values(ids: [
-                      "${LEAVE_SUBITEM.status}", "${LEAVE_SUBITEM.startDate}", "${LEAVE_SUBITEM.endDate}"
-                    ]) { id text value }
+                      "${LEAVE_SUBITEM.status}", "${LEAVE_SUBITEM.startDate}",
+                      "${LEAVE_SUBITEM.endDate}", "${LEAVE_SUBITEM.replacement}"
+                    ]) {
+                      id text value
+                      ... on StatusValue { label }
+                      ... on DateValue { date }
+                    }
                   }
                 }
               }
@@ -253,20 +274,20 @@ function useReportingData() {
     department: getColumn(item, HR.department)?.text || "—",
     position: getColumn(item, HR.position)?.text || "—",
     manager: getColumn(item, HR.manager)?.text || "—",
-    startDate: parseDate(getColumn(item, HR.startDate)?.value),
+    startDate: columnDate(getColumn(item, HR.startDate)),
     location: getColumn(item, HR.location)?.text || "—",
     employmentType: getColumn(item, HR.employmentType)?.text || "—",
-    probationEnd: parseDate(getColumn(item, HR.probationEnd)?.value),
+    probationEnd: columnDate(getColumn(item, HR.probationEnd)),
     status: getColumn(item, HR.status)?.text || "—",
-    leaveItemIds: parseLinkedIds(getColumn(item, HR.relationToLeave)?.value),
+    leaveItemIds: linkedIds(getColumn(item, HR.relationToLeave)),
     collaborationType: collaborationType(item.group?.title),
   })), [hrItems]);
 
   const leaveEmployees = useMemo<LeaveEmployee[]>(() => leaveItems.map((item) => {
-    const timeline = parseTimeline(getColumn(item, LEAVE.timeline)?.value);
-    const previousBalance = parseNumber(getColumn(item, LEAVE.previousBalance)?.text);
-    const currentBalance = parseNumber(getColumn(item, LEAVE.currentBalance)?.text);
-    const totalLeave = approvedLeaveDays(item.subitems);
+    const previousBalance = columnNumber(getColumn(item, LEAVE.previousBalance));
+    const currentBalance = columnNumber(getColumn(item, LEAVE.currentBalance));
+    const periods = approvedPeriods(item.subitems);
+    const totalLeave = periods.reduce((sum, period) => sum + workdaysInclusive(period.from, period.to), 0);
     const actualBalance = previousBalance === null && currentBalance === null
       ? null
       : (previousBalance ?? 0) + (currentBalance ?? 0) - totalLeave;
@@ -274,17 +295,15 @@ function useReportingData() {
     return {
       id: item.id,
       name: item.name,
-      hrItemIds: parseLinkedIds(getColumn(item, LEAVE.relationToHr)?.value),
+      hrItemIds: linkedIds(getColumn(item, LEAVE.relationToHr)),
       department: getColumn(item, LEAVE.department)?.text || "—",
       position: getColumn(item, LEAVE.positionMirror)?.text || "—",
-      timelineFrom: timeline.from,
-      timelineTo: timeline.to,
       previousBalance,
       currentBalance,
       totalLeave,
       actualBalance,
       approver: getColumn(item, LEAVE.approver)?.text || "—",
-      replacement: getColumn(item, LEAVE.replacement)?.text || "—",
+      periods,
     };
   }), [leaveItems]);
 
@@ -396,31 +415,38 @@ export function LeaveReporting() {
   if (loading || error) return <LoadingState error={error} />;
 
   const activeHrIds = new Set(employees.filter((employee) => employee.status === "ACTIVE" || employee.status === "PROBATION PERIOD").map((employee) => employee.id));
-  const eligible = leaveEmployees.filter((leave) => leave.hrItemIds.length === 0 || leave.hrItemIds.some((id) => activeHrIds.has(id)));
+  const eligible = leaveEmployees.filter((leave) => leave.hrItemIds.some((id) => activeHrIds.has(id)));
+  const today = todayIso();
 
-  const upcoming = eligible
-    .filter((leave) => {
-      const days = daysUntil(leave.timelineFrom);
+  const periodRows = eligible.flatMap((leave) => leave.periods.map((period) => ({
+    ...period,
+    employeeId: leave.id,
+    employeeName: leave.name,
+    department: leave.department,
+    approver: leave.approver,
+    actualBalance: leave.actualBalance,
+  })));
+
+  const awayNow = periodRows.filter((row) => row.from <= today && row.to >= today);
+  const upcoming = periodRows
+    .filter((row) => {
+      const days = daysUntil(row.from);
       return days !== null && days >= 0 && days <= 30;
     })
-    .sort((a, b) => a.timelineFrom.localeCompare(b.timelineFrom));
-
-  const awayNow = eligible.filter((leave) => {
-    if (!leave.timelineFrom || !leave.timelineTo) return false;
-    const today = new Date().toISOString().slice(0, 10);
-    return leave.timelineFrom <= today && leave.timelineTo >= today;
-  });
+    .sort((a, b) => a.from.localeCompare(b.from));
 
   const lowBalance = [...eligible]
     .filter((leave) => leave.actualBalance !== null)
     .sort((a, b) => (a.actualBalance ?? 0) - (b.actualBalance ?? 0));
+
+  const visiblePeriods = [...awayNow, ...upcoming.filter((row) => !awayNow.some((current) => current.id === row.id))];
 
   return (
     <main className="report-shell">
       <ReportHeader eyebrow="LEAVE & COVERAGE" title="🏖️ Leave Reporting" subtitle="Άδειες, κάλυψη και υπόλοιπα από το board Αιτήματα Αδειών & Εγκρίσεων." />
 
       <section className="kpi-grid">
-        <Kpi label="Απουσιάζουν τώρα" value={awayNow.length} />
+        <Kpi label="Απουσιάζουν τώρα" value={new Set(awayNow.map((row) => row.employeeId)).size} />
         <Kpi label="Επόμενες 30 ημέρες" value={upcoming.length} />
         <Kpi label="Άτομα με στοιχεία αδείας" value={eligible.length} />
         <Kpi label="Χαμηλό/αρνητικό υπόλοιπο" value={lowBalance.filter((row) => (row.actualBalance ?? 999) <= 3).length} hint="≤ 3 ημέρες" />
@@ -428,9 +454,9 @@ export function LeaveReporting() {
 
       <section className="report-panel">
         <h2>Ενεργές / Επερχόμενες Άδειες</h2>
-        {upcoming.length === 0 && awayNow.length === 0 ? <p className="muted">Δεν υπάρχουν ενεργές ή επερχόμενες άδειες στο επόμενο 30ήμερο.</p> : (
+        {visiblePeriods.length === 0 ? <p className="muted">Δεν υπάρχουν εγκεκριμένες ενεργές ή επερχόμενες άδειες στο επόμενο 30ήμερο.</p> : (
           <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Από</th><th>Έως</th><th>Replacement</th><th>Approver</th><th>Υπόλοιπο</th></tr></thead><tbody>
-            {[...awayNow, ...upcoming.filter((row) => !awayNow.some((current) => current.id === row.id))].map((row) => <tr key={row.id}><td>{row.name}</td><td>{row.department}</td><td>{formatDate(row.timelineFrom)}</td><td>{formatDate(row.timelineTo)}</td><td>{row.replacement}</td><td>{row.approver}</td><td>{formatNumber(row.actualBalance)}</td></tr>)}
+            {visiblePeriods.map((row) => <tr key={row.id}><td>{row.employeeName}</td><td>{row.department}</td><td>{formatDate(row.from)}</td><td>{formatDate(row.to)}</td><td>{row.replacement}</td><td>{row.approver}</td><td>{formatNumber(row.actualBalance)}</td></tr>)}
           </tbody></table></div>
         )}
       </section>
