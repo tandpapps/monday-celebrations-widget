@@ -51,11 +51,20 @@ table { width: 100%; border-collapse: collapse; min-width: 820px; }
 th, td { padding: 11px 10px; border-bottom: 1px solid #eceef2; text-align: left; vertical-align: top; font-size: 13px; }
 th { color: #676879; font-size: 11px; text-transform: uppercase; letter-spacing: .035em; background: #fafbfc; }
 tbody tr:hover { background: #fafbfc; }
-.status-pill { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.status-pill, .absence-pill { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .status-pill.active { background: #dff7e9; }
 .status-pill.probation { background: #fff2cc; }
+.absence-pill.approved { background: #dff7e9; }
+.absence-pill.justified { background: #e8ecff; }
 .muted { color: #676879; margin: 8px 0; }
+.balance-note { margin: -4px 0 14px; font-size: 12px; }
 .negative { font-weight: 700; color: #b42318; }
+
+.leave-period { min-width: 220px; }
+.leave-period-dates { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; margin-bottom: 6px; white-space: nowrap; }
+.leave-period-track { width: 100%; height: 9px; border-radius: 999px; overflow: hidden; background: #eceef2; border: 1px solid #e1e4ea; }
+.leave-period-fill { height: 100%; border-radius: inherit; background: #00c875; transition: width .2s ease; }
+.leave-period.justified .leave-period-fill { background: #6161ff; }
 
 @media (max-width: 960px) {
   .kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
