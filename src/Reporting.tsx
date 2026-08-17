@@ -26,10 +26,14 @@ const LEAVE = {
   timeline: "timerange_mm63zfet",
   previousBalance: "numeric_mm1r7j05",
   currentBalance: "numeric_mm1rcqfy",
-  totalLeave: "lookup_mm1rr74b",
-  actualBalance: "formula_mm1rkg2g",
   approver: "multiple_person_mm0gp5hr",
   replacement: "lookup_mm1vwk88",
+};
+
+const LEAVE_SUBITEM = {
+  status: "status",
+  startDate: "date_mm1rex0r",
+  endDate: "date_mm1rt0nh",
 };
 
 type ColumnValue = {
@@ -43,6 +47,7 @@ type MondayItem = {
   name: string;
   group?: { id: string; title: string };
   column_values: ColumnValue[];
+  subitems?: MondayItem[];
 };
 
 type HrEmployee = {
@@ -70,7 +75,7 @@ type LeaveEmployee = {
   timelineTo: string;
   previousBalance: number | null;
   currentBalance: number | null;
-  totalLeave: number | null;
+  totalLeave: number;
   actualBalance: number | null;
   approver: string;
   replacement: string;
@@ -118,6 +123,33 @@ function parseNumber(text: string | undefined): number | null {
   if (!text?.trim()) return null;
   const value = Number(text.replace(",", "."));
   return Number.isFinite(value) ? value : null;
+}
+
+function workdaysInclusive(from: string, to: string): number {
+  if (!from || !to) return 0;
+  const start = new Date(`${from}T12:00:00`);
+  const end = new Date(`${to}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+
+  let count = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
+function approvedLeaveDays(subitems: MondayItem[] | undefined): number {
+  if (!subitems?.length) return 0;
+  return subitems.reduce((sum, subitem) => {
+    const status = (getColumn(subitem, LEAVE_SUBITEM.status)?.text ?? "").trim().toLocaleUpperCase("en-US");
+    if (status !== "APPROVED") return sum;
+    const from = parseDate(getColumn(subitem, LEAVE_SUBITEM.startDate)?.value);
+    const to = parseDate(getColumn(subitem, LEAVE_SUBITEM.endDate)?.value);
+    return sum + workdaysInclusive(from, to);
+  }, 0);
 }
 
 function collaborationType(groupTitle: string | undefined): HrEmployee["collaborationType"] {
@@ -183,9 +215,15 @@ function useReportingData() {
                   column_values(ids: [
                     "${LEAVE.relationToHr}", "${LEAVE.positionMirror}", "${LEAVE.employee}",
                     "${LEAVE.department}", "${LEAVE.timeline}", "${LEAVE.previousBalance}",
-                    "${LEAVE.currentBalance}", "${LEAVE.totalLeave}", "${LEAVE.actualBalance}",
-                    "${LEAVE.approver}", "${LEAVE.replacement}"
+                    "${LEAVE.currentBalance}", "${LEAVE.approver}", "${LEAVE.replacement}"
                   ]) { id text value }
+                  subitems {
+                    id
+                    name
+                    column_values(ids: [
+                      "${LEAVE_SUBITEM.status}", "${LEAVE_SUBITEM.startDate}", "${LEAVE_SUBITEM.endDate}"
+                    ]) { id text value }
+                  }
                 }
               }
             }
@@ -226,6 +264,13 @@ function useReportingData() {
 
   const leaveEmployees = useMemo<LeaveEmployee[]>(() => leaveItems.map((item) => {
     const timeline = parseTimeline(getColumn(item, LEAVE.timeline)?.value);
+    const previousBalance = parseNumber(getColumn(item, LEAVE.previousBalance)?.text);
+    const currentBalance = parseNumber(getColumn(item, LEAVE.currentBalance)?.text);
+    const totalLeave = approvedLeaveDays(item.subitems);
+    const actualBalance = previousBalance === null && currentBalance === null
+      ? null
+      : (previousBalance ?? 0) + (currentBalance ?? 0) - totalLeave;
+
     return {
       id: item.id,
       name: item.name,
@@ -234,10 +279,10 @@ function useReportingData() {
       position: getColumn(item, LEAVE.positionMirror)?.text || "—",
       timelineFrom: timeline.from,
       timelineTo: timeline.to,
-      previousBalance: parseNumber(getColumn(item, LEAVE.previousBalance)?.text),
-      currentBalance: parseNumber(getColumn(item, LEAVE.currentBalance)?.text),
-      totalLeave: parseNumber(getColumn(item, LEAVE.totalLeave)?.text),
-      actualBalance: parseNumber(getColumn(item, LEAVE.actualBalance)?.text),
+      previousBalance,
+      currentBalance,
+      totalLeave,
+      actualBalance,
       approver: getColumn(item, LEAVE.approver)?.text || "—",
       replacement: getColumn(item, LEAVE.replacement)?.text || "—",
     };
