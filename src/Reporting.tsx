@@ -20,7 +20,6 @@ const HR = {
 
 const LEAVE = {
   relationToHr: "board_relation_mm64vycx",
-  positionMirror: "lookup_mm64awrp",
   employee: "person",
   department: "dropdown_mm0gjq4j",
   previousBalance: "numeric_mm1r7j05",
@@ -73,6 +72,7 @@ type LeavePeriod = {
   from: string;
   to: string;
   replacement: string;
+  status: "Approved" | "Justified";
 };
 
 type LeaveEmployee = {
@@ -132,12 +132,12 @@ function workdaysInclusive(from: string, to: string): number {
   return count;
 }
 
-function approvedPeriods(subitems: MondayItem[] | undefined): LeavePeriod[] {
+function absencePeriods(subitems: MondayItem[] | undefined): LeavePeriod[] {
   if (!subitems?.length) return [];
   return subitems.flatMap((subitem) => {
     const statusColumn = getColumn(subitem, LEAVE_SUBITEM.status);
-    const status = (statusColumn?.label ?? statusColumn?.text ?? "").trim().toLocaleUpperCase("en-US");
-    if (status !== "APPROVED") return [];
+    const rawStatus = (statusColumn?.label ?? statusColumn?.text ?? "").trim().toLocaleUpperCase("en-US");
+    if (rawStatus !== "APPROVED" && rawStatus !== "JUSTIFIED") return [];
 
     const from = columnDate(getColumn(subitem, LEAVE_SUBITEM.startDate));
     const to = columnDate(getColumn(subitem, LEAVE_SUBITEM.endDate));
@@ -148,6 +148,7 @@ function approvedPeriods(subitems: MondayItem[] | undefined): LeavePeriod[] {
       from,
       to,
       replacement: getColumn(subitem, LEAVE_SUBITEM.replacement)?.text || "—",
+      status: rawStatus === "JUSTIFIED" ? "Justified" : "Approved",
     }];
   });
 }
@@ -189,6 +190,30 @@ function daysUntil(value: string) {
   return Math.ceil((target.getTime() - now.getTime()) / 86400000);
 }
 
+function periodProgress(from: string, to: string): number {
+  const start = new Date(`${from}T12:00:00`).getTime();
+  const end = new Date(`${to}T12:00:00`).getTime();
+  const today = new Date(`${todayIso()}T12:00:00`).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
+  if (today < start) return 0;
+  if (today >= end) return 100;
+  const total = end - start;
+  if (total === 0) return 100;
+  return Math.max(0, Math.min(100, ((today - start) / total) * 100));
+}
+
+function PeriodVisual({ from, to, status }: { from: string; to: string; status: LeavePeriod["status"] }) {
+  const progress = periodProgress(from, to);
+  return (
+    <div className={`leave-period ${status.toLowerCase()}`}>
+      <div className="leave-period-dates"><span>{formatDate(from)}</span><span>→</span><span>{formatDate(to)}</span></div>
+      <div className="leave-period-track" aria-label={`${Math.round(progress)}% του διαστήματος έχει περάσει`}>
+        <div className="leave-period-fill" style={{ width: `${progress}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function useReportingData() {
   const [hrItems, setHrItems] = useState<MondayItem[]>([]);
   const [leaveItems, setLeaveItems] = useState<MondayItem[]>([]);
@@ -225,9 +250,8 @@ function useReportingData() {
                   name
                   group { id title }
                   column_values(ids: [
-                    "${LEAVE.relationToHr}", "${LEAVE.positionMirror}", "${LEAVE.employee}",
-                    "${LEAVE.department}", "${LEAVE.previousBalance}", "${LEAVE.currentBalance}",
-                    "${LEAVE.approver}"
+                    "${LEAVE.relationToHr}", "${LEAVE.employee}", "${LEAVE.department}",
+                    "${LEAVE.previousBalance}", "${LEAVE.currentBalance}", "${LEAVE.approver}"
                   ]) {
                     id text value
                     ... on BoardRelationValue { linked_item_ids }
@@ -283,29 +307,37 @@ function useReportingData() {
     collaborationType: collaborationType(item.group?.title),
   })), [hrItems]);
 
-  const leaveEmployees = useMemo<LeaveEmployee[]>(() => leaveItems.map((item) => {
-    const previousBalance = columnNumber(getColumn(item, LEAVE.previousBalance));
-    const currentBalance = columnNumber(getColumn(item, LEAVE.currentBalance));
-    const periods = approvedPeriods(item.subitems);
-    const totalLeave = periods.reduce((sum, period) => sum + workdaysInclusive(period.from, period.to), 0);
-    const actualBalance = previousBalance === null && currentBalance === null
-      ? null
-      : (previousBalance ?? 0) + (currentBalance ?? 0) - totalLeave;
+  const leaveEmployees = useMemo<LeaveEmployee[]>(() => {
+    const hrById = new Map(employees.map((employee) => [employee.id, employee]));
 
-    return {
-      id: item.id,
-      name: item.name,
-      hrItemIds: linkedIds(getColumn(item, LEAVE.relationToHr)),
-      department: getColumn(item, LEAVE.department)?.text || "—",
-      position: getColumn(item, LEAVE.positionMirror)?.text || "—",
-      previousBalance,
-      currentBalance,
-      totalLeave,
-      actualBalance,
-      approver: getColumn(item, LEAVE.approver)?.text || "—",
-      periods,
-    };
-  }), [leaveItems]);
+    return leaveItems.map((item) => {
+      const hrItemIds = linkedIds(getColumn(item, LEAVE.relationToHr));
+      const linkedHr = hrItemIds.map((id) => hrById.get(id)).find(Boolean);
+      const previousBalance = columnNumber(getColumn(item, LEAVE.previousBalance));
+      const currentBalance = columnNumber(getColumn(item, LEAVE.currentBalance));
+      const periods = absencePeriods(item.subitems);
+      const totalLeave = periods
+        .filter((period) => period.status === "Approved")
+        .reduce((sum, period) => sum + workdaysInclusive(period.from, period.to), 0);
+      const actualBalance = previousBalance === null && currentBalance === null
+        ? null
+        : (previousBalance ?? 0) + (currentBalance ?? 0) - totalLeave;
+
+      return {
+        id: item.id,
+        name: item.name,
+        hrItemIds,
+        department: getColumn(item, LEAVE.department)?.text || linkedHr?.department || "—",
+        position: linkedHr?.position || "—",
+        previousBalance,
+        currentBalance,
+        totalLeave,
+        actualBalance,
+        approver: getColumn(item, LEAVE.approver)?.text || "—",
+        periods,
+      };
+    });
+  }, [leaveItems, employees]);
 
   return { employees, leaveEmployees, loading, error };
 }
@@ -443,27 +475,28 @@ export function LeaveReporting() {
 
   return (
     <main className="report-shell">
-      <ReportHeader eyebrow="LEAVE & COVERAGE" title="🏖️ Leave Reporting" subtitle="Άδειες, κάλυψη και υπόλοιπα από το board Αιτήματα Αδειών & Εγκρίσεων." />
+      <ReportHeader eyebrow="LEAVE & COVERAGE" title="🏖️ Leave Reporting" subtitle="Άδειες, ρεπό, κάλυψη και υπόλοιπα από το board Αιτήματα Αδειών & Εγκρίσεων." />
 
       <section className="kpi-grid">
         <Kpi label="Απουσιάζουν τώρα" value={new Set(awayNow.map((row) => row.employeeId)).size} />
-        <Kpi label="Επόμενες 30 ημέρες" value={upcoming.length} />
+        <Kpi label="Επόμενες 30 ημέρες" value={upcoming.length} hint="Approved + Justified" />
         <Kpi label="Άτομα με στοιχεία αδείας" value={eligible.length} />
         <Kpi label="Χαμηλό/αρνητικό υπόλοιπο" value={lowBalance.filter((row) => (row.actualBalance ?? 999) <= 3).length} hint="≤ 3 ημέρες" />
       </section>
 
       <section className="report-panel">
-        <h2>Ενεργές / Επερχόμενες Άδειες</h2>
-        {visiblePeriods.length === 0 ? <p className="muted">Δεν υπάρχουν εγκεκριμένες ενεργές ή επερχόμενες άδειες στο επόμενο 30ήμερο.</p> : (
-          <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Από</th><th>Έως</th><th>Replacement</th><th>Approver</th><th>Υπόλοιπο</th></tr></thead><tbody>
-            {visiblePeriods.map((row) => <tr key={row.id}><td>{row.employeeName}</td><td>{row.department}</td><td>{formatDate(row.from)}</td><td>{formatDate(row.to)}</td><td>{row.replacement}</td><td>{row.approver}</td><td>{formatNumber(row.actualBalance)}</td></tr>)}
+        <h2>Ενεργές / Επερχόμενες Απουσίες</h2>
+        {visiblePeriods.length === 0 ? <p className="muted">Δεν υπάρχουν Approved ή Justified ενεργές/επερχόμενες απουσίες στο επόμενο 30ήμερο.</p> : (
+          <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Status</th><th>Διάστημα</th><th>Replacement</th><th>Approver</th><th>Υπόλοιπο</th></tr></thead><tbody>
+            {visiblePeriods.map((row) => <tr key={row.id}><td>{row.employeeName}</td><td>{row.department}</td><td><span className={`absence-pill ${row.status.toLowerCase()}`}>{row.status}</span></td><td><PeriodVisual from={row.from} to={row.to} status={row.status} /></td><td>{row.replacement}</td><td>{row.approver}</td><td>{formatNumber(row.actualBalance)}</td></tr>)}
           </tbody></table></div>
         )}
       </section>
 
       <section className="report-panel">
         <h2>Πραγματικό Υπόλοιπο ανά Άτομο</h2>
-        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Position</th><th>Προηγ. Έτος</th><th>Τρέχον Έτος</th><th>Σύνολο Άδειας</th><th>Πραγματικό Υπόλοιπο</th></tr></thead><tbody>
+        <p className="muted balance-note">Το υπόλοιπο αφαιρεί μόνο Approved ημέρες κανονικής άδειας. Τα Justified εμφανίζονται ως απουσίες αλλά δεν μειώνουν το υπόλοιπο.</p>
+        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Position</th><th>Προηγ. Έτος</th><th>Τρέχον Έτος</th><th>Approved Ημέρες</th><th>Πραγματικό Υπόλοιπο</th></tr></thead><tbody>
           {lowBalance.map((row) => <tr key={row.id}><td>{row.name}</td><td>{row.department}</td><td>{row.position}</td><td>{formatNumber(row.previousBalance)}</td><td>{formatNumber(row.currentBalance)}</td><td>{formatNumber(row.totalLeave)}</td><td className={(row.actualBalance ?? 999) < 0 ? "negative" : ""}>{formatNumber(row.actualBalance)}</td></tr>)}
         </tbody></table></div>
       </section>
