@@ -19,6 +19,10 @@ type MondayItem = {
   }>;
 };
 
+type MondayContextWithBoard = {
+  boardId?: number | string;
+};
+
 const monday = mondaySdk();
 const FALLBACK_BOARD_ID = 5099059636;
 
@@ -153,7 +157,8 @@ export default function App() {
     async function load() {
       try {
         const contextResponse = await monday.get("context");
-        const boardId = Number(contextResponse?.data?.boardId || FALLBACK_BOARD_ID);
+        const context = (contextResponse?.data ?? {}) as MondayContextWithBoard;
+        const boardId = Number(context.boardId ?? FALLBACK_BOARD_ID);
 
         const query = `
           query Celebrations($boardId: [ID!]) {
