@@ -286,20 +286,57 @@ function EortologioToday() {
 <style>
   html,body{margin:0;padding:0;background:transparent;color:#323338;font-family:Inter,Arial,sans-serif;overflow:hidden}
   table{width:100%!important;border:0!important;background:transparent!important;border-collapse:collapse!important}
-  td,th{border:0!important;background:transparent!important;color:#323338!important;font-family:Inter,Arial,sans-serif!important;font-size:13px!important;line-height:1.55!important;padding:0!important;text-align:left!important}
-  a[href*="eortologio.gr"]{display:none!important}
+  td,th{border:0!important;background:transparent!important;color:#323338!important;font-family:Inter,Arial,sans-serif!important;font-size:13px!important;line-height:1.45!important;padding:0!important;text-align:left!important}
+  a{display:none!important}
+  .today-names{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .today-name{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid #e4e1ff;color:#3d3b67;font-size:12px;font-weight:600;line-height:1;white-space:nowrap}
 </style>
 </head>
 <body>
 <script src="${scriptUrl}"><\/script>
 <script>
-  setTimeout(function(){
-    document.querySelectorAll('a').forEach(function(a){
-      if ((a.textContent || '').toLowerCase().includes('eortologio.gr')) {
-        a.remove();
-      }
+(function(){
+  function refine(){
+    var rows = Array.from(document.querySelectorAll('tr'));
+    rows.forEach(function(row){
+      var text = (row.textContent || '').replace(/\\s+/g,' ').trim();
+      if (/^σήμερα\\b/i.test(text)) row.style.display = 'none';
     });
+
+    var cells = Array.from(document.querySelectorAll('td'));
+    var target = cells.find(function(cell){
+      var text = (cell.textContent || '').replace(/\\s+/g,' ').trim();
+      return text.indexOf(',') !== -1 && !/^σήμερα\\b/i.test(text);
+    });
+
+    if (!target || target.dataset.refined === '1') return false;
+    var names = (target.textContent || '')
+      .split(',')
+      .map(function(name){ return name.trim(); })
+      .filter(Boolean);
+    if (!names.length) return false;
+
+    target.dataset.refined = '1';
+    target.textContent = '';
+    var wrap = document.createElement('div');
+    wrap.className = 'today-names';
+    names.forEach(function(name){
+      var chip = document.createElement('span');
+      chip.className = 'today-name';
+      chip.textContent = name;
+      wrap.appendChild(chip);
+    });
+    target.appendChild(wrap);
+    return true;
+  }
+
+  var attempts = 0;
+  var timer = setInterval(function(){
+    attempts += 1;
+    var done = refine();
+    if (done || attempts > 20) clearInterval(timer);
   }, 50);
+})();
 <\/script>
 </body>
 </html>`;
@@ -321,7 +358,6 @@ function EortologioToday() {
           srcDoc={srcDoc}
         />
       </div>
-      <small className="external-namedays-source">Πηγή: eortologio.gr</small>
     </section>
   );
 }
