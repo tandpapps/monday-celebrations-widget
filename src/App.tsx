@@ -241,6 +241,8 @@ export default function App() {
         <CelebrationSection icon="🎂" title="Γενέθλια αυτή την εβδομάδα" items={birthdays} emptyText="Δεν υπάρχουν γενέθλια αυτή την εβδομάδα." />
         <CelebrationSection icon="🎉" title="Γιορτές αυτή την εβδομάδα" items={nameDays} emptyText="Δεν υπάρχουν γιορτές αυτή την εβδομάδα." />
       </div>
+
+      <EortologioToday />
     </main>
   );
 }
@@ -270,6 +272,57 @@ function CelebrationSection({ icon, title, items, emptyText }: { icon: string; t
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+function EortologioToday() {
+  const scriptUrl = "https://www.eortologio.gr/export_code/eortologio.php?fnt_clr=323338&tbl_wdth=100%25&tbl_brdrclr=FFFFFF&tbl_brd=0&td_bgclr=FFFFFF&tbl_cellpading=0&tbl_cellspacing=0&tbl_font=Arial&tbl_font_size=13&tbl_title_font_size=12&tbl_title_bgcolor=FFFFFF&tbl_title_font_color=676879&tbl_title=&morfi=3&what_day=1&ttl=0&fr1=0&fr2=0";
+
+  const srcDoc = `<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8" />
+<style>
+  html,body{margin:0;padding:0;background:transparent;color:#323338;font-family:Inter,Arial,sans-serif;overflow:hidden}
+  table{width:100%!important;border:0!important;background:transparent!important;border-collapse:collapse!important}
+  td,th{border:0!important;background:transparent!important;color:#323338!important;font-family:Inter,Arial,sans-serif!important;font-size:13px!important;line-height:1.55!important;padding:0!important;text-align:left!important}
+  a[href*="eortologio.gr"]{display:none!important}
+</style>
+</head>
+<body>
+<script src="${scriptUrl}"><\/script>
+<script>
+  setTimeout(function(){
+    document.querySelectorAll('a').forEach(function(a){
+      if ((a.textContent || '').toLowerCase().includes('eortologio.gr')) {
+        var row = a.closest('tr');
+        if (row) row.remove(); else a.remove();
+      }
+    });
+  }, 50);
+<\/script>
+</body>
+</html>`;
+
+  return (
+    <section className="external-namedays">
+      <div className="external-namedays-title">
+        <span>✨</span>
+        <div>
+          <h2>Σήμερα γιορτάζουν επίσης:</h2>
+          <p>Ονόματα της ημέρας, ανεξάρτητα από την ομάδα μας.</p>
+        </div>
+      </div>
+      <div className="external-namedays-frame-wrap">
+        <iframe
+          className="external-namedays-frame"
+          title="Σήμερα γιορτάζουν επίσης"
+          sandbox="allow-scripts"
+          srcDoc={srcDoc}
+        />
+      </div>
+      <small className="external-namedays-source">Πηγή: eortologio.gr</small>
     </section>
   );
 }
