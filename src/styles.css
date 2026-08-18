@@ -34,14 +34,13 @@ h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.1; }
 .empty, .state { padding: 24px 12px; color: #676879; text-align: center; }
 .error { color: #b42318; }
 
-.external-namedays { margin-top: 16px; background: linear-gradient(135deg, #ffffff 0%, #fbfaff 100%); border: 1px solid #e8e6f5; border-radius: 14px; padding: 14px 16px 11px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.external-namedays { margin-top: 16px; background: linear-gradient(135deg, #ffffff 0%, #fbfaff 100%); border: 1px solid #e8e6f5; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
 .external-namedays-title { display: flex; align-items: flex-start; gap: 10px; }
 .external-namedays-title > span { font-size: 20px; line-height: 1.2; }
 .external-namedays-title h2 { margin: 0; font-size: 14px; }
 .external-namedays-title p { margin: 3px 0 0; color: #8b8d97; font-size: 11px; }
-.external-namedays-frame-wrap { margin-top: 9px; padding: 9px 11px; border-radius: 10px; background: #f7f6ff; border: 1px solid #eeecff; min-height: 42px; }
-.external-namedays-frame { display: block; width: 100%; height: 52px; border: 0; background: transparent; overflow: hidden; }
-.external-namedays-source { display: block; margin-top: 5px; text-align: right; color: #a2a4ad; font-size: 9px; }
+.external-namedays-frame-wrap { margin-top: 9px; padding: 9px 11px; border-radius: 10px; background: #f7f6ff; border: 1px solid #eeecff; min-height: 38px; }
+.external-namedays-frame { display: block; width: 100%; height: 46px; border: 0; background: transparent; overflow: hidden; }
 
 .report-shell { max-width: 1500px; margin: 0 auto; }
 .kpi-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin-bottom: 16px; }
@@ -86,7 +85,7 @@ tbody tr:hover { background: #fafbfc; }
   .grid { grid-template-columns: 1fr; }
   .card { align-items: flex-start; flex-direction: column; }
   .date-area { align-items: flex-start; text-align: left; }
-  .external-namedays-frame { height: 70px; }
+  .external-namedays-frame { height: 72px; }
 }
 
 @media (max-width: 520px) {
