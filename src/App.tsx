@@ -285,9 +285,6 @@ function EortologioToday() {
 <meta charset="utf-8" />
 <style>
   html,body{margin:0;padding:0;background:transparent;color:#323338;font-family:Inter,Arial,sans-serif;overflow:hidden}
-  table{width:100%!important;border:0!important;background:transparent!important;border-collapse:collapse!important}
-  td,th{border:0!important;background:transparent!important;color:#323338!important;font-family:Inter,Arial,sans-serif!important;font-size:13px!important;line-height:1.45!important;padding:0!important;text-align:left!important}
-  a{display:none!important}
   .today-names{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
   .today-name{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid #e4e1ff;color:#3d3b67;font-size:12px;font-weight:600;line-height:1;white-space:nowrap}
 </style>
@@ -296,45 +293,63 @@ function EortologioToday() {
 <script src="${scriptUrl}"><\/script>
 <script>
 (function(){
-  function refine(){
-    var rows = Array.from(document.querySelectorAll('tr'));
-    rows.forEach(function(row){
-      var text = (row.textContent || '').replace(/\\s+/g,' ').trim();
-      if (/^σήμερα\\b/i.test(text)) row.style.display = 'none';
-    });
+  function cleanToken(value){
+    return (value || '').replace(/\\s+/g, ' ').trim();
+  }
 
-    var cells = Array.from(document.querySelectorAll('td'));
-    var target = cells.find(function(cell){
-      var text = (cell.textContent || '').replace(/\\s+/g,' ').trim();
-      return text.indexOf(',') !== -1 && !/^σήμερα\\b/i.test(text);
-    });
+  function isNoise(value){
+    var text = cleanToken(value).toLowerCase();
+    return !text ||
+      text.indexOf('σήμερα ') === 0 ||
+      text === 'σήμερα' ||
+      text.indexOf('eortologio.gr') !== -1 ||
+      text.indexOf('www.eortologio') !== -1 ||
+      /^τρι\\s+\\d{1,2}\\s+/i.test(text) ||
+      /^δευ\\s+\\d{1,2}\\s+/i.test(text) ||
+      /^τετ\\s+\\d{1,2}\\s+/i.test(text) ||
+      /^πεμ\\s+\\d{1,2}\\s+/i.test(text) ||
+      /^παρ\\s+\\d{1,2}\\s+/i.test(text) ||
+      /^σαβ\\s+\\d{1,2}\\s+/i.test(text) ||
+      /^κυρ\\s+\\d{1,2}\\s+/i.test(text);
+  }
 
-    if (!target || target.dataset.refined === '1') return false;
-    var names = (target.textContent || '')
+  function extractNames(){
+    var candidates = Array.from(document.querySelectorAll('td'))
+      .map(function(cell){ return cleanToken(cell.textContent); })
+      .filter(function(text){ return text.indexOf(',') !== -1; })
+      .sort(function(a,b){ return b.length - a.length; });
+
+    if (!candidates.length) return [];
+
+    return candidates[0]
       .split(',')
-      .map(function(name){ return name.trim(); })
-      .filter(Boolean);
+      .map(cleanToken)
+      .filter(function(name){ return !isNoise(name); })
+      .filter(function(name, index, array){ return array.indexOf(name) === index; });
+  }
+
+  function render(){
+    var names = extractNames();
     if (!names.length) return false;
 
-    target.dataset.refined = '1';
-    target.textContent = '';
     var wrap = document.createElement('div');
     wrap.className = 'today-names';
+
     names.forEach(function(name){
       var chip = document.createElement('span');
       chip.className = 'today-name';
       chip.textContent = name;
       wrap.appendChild(chip);
     });
-    target.appendChild(wrap);
+
+    document.body.replaceChildren(wrap);
     return true;
   }
 
   var attempts = 0;
   var timer = setInterval(function(){
     attempts += 1;
-    var done = refine();
-    if (done || attempts > 20) clearInterval(timer);
+    if (render() || attempts > 30) clearInterval(timer);
   }, 50);
 })();
 <\/script>
