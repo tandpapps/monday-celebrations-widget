@@ -296,8 +296,7 @@ function EortologioToday() {
   setTimeout(function(){
     document.querySelectorAll('a').forEach(function(a){
       if ((a.textContent || '').toLowerCase().includes('eortologio.gr')) {
-        var row = a.closest('tr');
-        if (row) row.remove(); else a.remove();
+        a.remove();
       }
     });
   }, 50);
