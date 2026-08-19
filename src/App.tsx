@@ -23,6 +23,11 @@ type MondayContextWithBoard = {
   boardId?: number | string;
 };
 
+type NamedaysMessage = {
+  type: "celebrations:namedays";
+  names: string[];
+};
+
 const monday = mondaySdk();
 const FALLBACK_BOARD_ID = 5099059636;
 
@@ -277,17 +282,32 @@ function CelebrationSection({ icon, title, items, emptyText }: { icon: string; t
 }
 
 function EortologioToday() {
+  const [names, setNames] = useState<string[] | null>(null);
   const scriptUrl = "https://www.eortologio.gr/export_code/eortologio.php?fnt_clr=323338&tbl_wdth=100%25&tbl_brdrclr=FFFFFF&tbl_brd=0&td_bgclr=FFFFFF&tbl_cellpading=0&tbl_cellspacing=0&tbl_font=Arial&tbl_font_size=13&tbl_title_font_size=12&tbl_title_bgcolor=FFFFFF&tbl_title_font_color=676879&tbl_title=&morfi=3&what_day=1&ttl=0&fr1=0&fr2=0";
+
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      const data = event.data as NamedaysMessage | undefined;
+      if (!data || data.type !== "celebrations:namedays" || !Array.isArray(data.names)) return;
+
+      const cleanNames = data.names
+        .filter((name): name is string => typeof name === "string")
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .slice(0, 30);
+
+      setNames(cleanNames);
+    }
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
 
   const srcDoc = `<!doctype html>
 <html lang="el">
 <head>
 <meta charset="utf-8" />
-<style>
-  html,body{margin:0;padding:0;background:transparent;color:#323338;font-family:Inter,Arial,sans-serif;overflow:hidden}
-  .today-names{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  .today-name{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid #e4e1ff;color:#3d3b67;font-size:12px;font-weight:600;line-height:1;white-space:nowrap}
-</style>
+<style>html,body{display:none!important}</style>
 </head>
 <body>
 <script src="${scriptUrl}"><\/script>
@@ -300,17 +320,26 @@ function EortologioToday() {
   function isNoise(value){
     var text = cleanToken(value).toLowerCase();
     return !text ||
-      text.indexOf('σήμερα ') === 0 ||
-      text === 'σήμερα' ||
-      text.indexOf('eortologio.gr') !== -1 ||
-      text.indexOf('www.eortologio') !== -1 ||
-      /^τρι\\s+\\d{1,2}\\s+/i.test(text) ||
-      /^δευ\\s+\\d{1,2}\\s+/i.test(text) ||
-      /^τετ\\s+\\d{1,2}\\s+/i.test(text) ||
-      /^πεμ\\s+\\d{1,2}\\s+/i.test(text) ||
-      /^παρ\\s+\\d{1,2}\\s+/i.test(text) ||
-      /^σαβ\\s+\\d{1,2}\\s+/i.test(text) ||
-      /^κυρ\\s+\\d{1,2}\\s+/i.test(text);
+      text.length > 42 ||
+      /[.!?:;]/.test(text) ||
+      text.indexOf('σήμερα') !== -1 ||
+      text.indexOf('γιορτ') !== -1 ||
+      text.indexOf('γνωστ') !== -1 ||
+      text.indexOf('εορτολόγ') !== -1 ||
+      text.indexOf('eortologio') !== -1 ||
+      text.indexOf('www.') !== -1 ||
+      text.indexOf('http') !== -1 ||
+      text.indexOf('κανένα') !== -1 ||
+      text.indexOf('καμία') !== -1 ||
+      text.indexOf('δεν ') !== -1 ||
+      /\\d/.test(text) ||
+      /^τρι\\s/i.test(text) ||
+      /^δευ\\s/i.test(text) ||
+      /^τετ\\s/i.test(text) ||
+      /^πεμ\\s/i.test(text) ||
+      /^παρ\\s/i.test(text) ||
+      /^σαβ\\s/i.test(text) ||
+      /^κυρ\\s/i.test(text);
   }
 
   function extractNames(){
@@ -328,51 +357,74 @@ function EortologioToday() {
       .filter(function(name, index, array){ return array.indexOf(name) === index; });
   }
 
-  function render(){
-    var names = extractNames();
-    if (!names.length) return false;
-
-    var wrap = document.createElement('div');
-    wrap.className = 'today-names';
-
-    names.forEach(function(name){
-      var chip = document.createElement('span');
-      chip.className = 'today-name';
-      chip.textContent = name;
-      wrap.appendChild(chip);
-    });
-
-    document.body.replaceChildren(wrap);
-    return true;
+  function report(names){
+    window.parent.postMessage({ type: 'celebrations:namedays', names: names }, '*');
   }
 
   var attempts = 0;
   var timer = setInterval(function(){
     attempts += 1;
-    if (render() || attempts > 30) clearInterval(timer);
+    var found = extractNames();
+    if (found.length) {
+      clearInterval(timer);
+      report(found);
+      return;
+    }
+
+    if (attempts > 30) {
+      clearInterval(timer);
+      report([]);
+    }
   }, 50);
 })();
 <\/script>
 </body>
 </html>`;
 
+  const chipStyle = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "7px 11px",
+    borderRadius: 999,
+    background: "#ffffff",
+    border: "1px solid #e4e1ff",
+    color: "#3d3b67",
+    fontSize: 12,
+    fontWeight: 650,
+    lineHeight: 1,
+    boxShadow: "0 1px 2px rgba(31,36,48,.04)",
+  } as const;
+
   return (
-    <section className="external-namedays">
-      <div className="external-namedays-title">
-        <span>✨</span>
-        <div>
-          <h2>Σήμερα γιορτάζουν επίσης:</h2>
-          <p>Ονόματα της ημέρας, ανεξάρτητα από την ομάδα μας.</p>
-        </div>
-      </div>
-      <div className="external-namedays-frame-wrap">
-        <iframe
-          className="external-namedays-frame"
-          title="Σήμερα γιορτάζουν επίσης"
-          sandbox="allow-scripts"
-          srcDoc={srcDoc}
-        />
-      </div>
-    </section>
+    <>
+      <iframe
+        title="namedays data source"
+        aria-hidden="true"
+        tabIndex={-1}
+        sandbox="allow-scripts"
+        srcDoc={srcDoc}
+        style={{ display: "none" }}
+      />
+
+      {names && names.length > 0 && (
+        <section className="external-namedays">
+          <div className="external-namedays-title">
+            <span>✨</span>
+            <div>
+              <h2>Ονόματα που γιορτάζουν σήμερα</h2>
+              <p>Μια μικρή υπενθύμιση για τις σημερινές ονομαστικές γιορτές.</p>
+            </div>
+          </div>
+          <div
+            className="external-namedays-frame-wrap"
+            style={{ display: "flex", flexWrap: "wrap", gap: 7, minHeight: "auto" }}
+          >
+            {names.map((name) => (
+              <span key={name} style={chipStyle}>{name}</span>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
   );
 }
