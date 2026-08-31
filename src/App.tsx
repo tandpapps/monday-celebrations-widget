@@ -356,6 +356,28 @@ function EortologioToday() {
     return (value || '').replace(/\\s+/g, ' ').trim();
   }
 
+  function normalizeText(value){
+    return cleanToken(value)
+      .normalize('NFD')
+      .replace(/[\\u0300-\\u036f]/g, '')
+      .toLowerCase();
+  }
+
+  function extractSourceDateKey(){
+    var text = normalizeText(document.body.textContent || '');
+    var monthNumbers = {
+      'ιαν': '01', 'φεβ': '02', 'μαρ': '03', 'απρ': '04',
+      'μαι': '05', 'ιουν': '06', 'ιουλ': '07', 'αυγ': '08',
+      'σεπ': '09', 'οκτ': '10', 'νοε': '11', 'δεκ': '12'
+    };
+    var match = text.match(/(?:δευ|τρι|τετ|πεμ|παρ|σαβ|κυρ)?\\s*(\\d{1,2})\\s+(ιαν|φεβ|μαρ|απρ|μαι|ιουν|ιουλ|αυγ|σεπ|οκτ|νοε|δεκ)[^0-9]*(\\d{4})/i);
+    if (!match) return null;
+    var day = String(Number(match[1])).padStart(2, '0');
+    var month = monthNumbers[match[2].toLowerCase()];
+    if (!month) return null;
+    return match[3] + '-' + month + '-' + day;
+  }
+
   function isNoise(value){
     var text = cleanToken(value).toLowerCase();
     return !text ||
@@ -403,8 +425,16 @@ function EortologioToday() {
   var attempts = 0;
   var timer = setInterval(function(){
     attempts += 1;
+    var sourceDateKey = extractSourceDateKey();
     var found = extractNames();
-    if (found.length) {
+
+    if (sourceDateKey && sourceDateKey !== dateKey) {
+      clearInterval(timer);
+      report([]);
+      return;
+    }
+
+    if (sourceDateKey === dateKey && found.length) {
       clearInterval(timer);
       report(found);
       return;
