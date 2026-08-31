@@ -26,10 +26,12 @@ type MondayContextWithBoard = {
 type NamedaysMessage = {
   type: "celebrations:namedays";
   names: string[];
+  dateKey: string;
 };
 
 const monday = mondaySdk();
 const FALLBACK_BOARD_ID = 5099059636;
+const ATHENS_TIME_ZONE = "Europe/Athens";
 
 const COL = {
   department: "dropdown_mm4ky8en",
@@ -139,6 +141,18 @@ function formatWeekRange(start: Date, end: Date) {
   const startText = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "long" }).format(start);
   const endText = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "long" }).format(end);
   return `${startText} – ${endText}`;
+}
+
+function getAthensDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: ATHENS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function isToday(date: Date) {
@@ -283,12 +297,35 @@ function CelebrationSection({ icon, title, items, emptyText }: { icon: string; t
 
 function EortologioToday() {
   const [names, setNames] = useState<string[] | null>(null);
-  const scriptUrl = "https://www.eortologio.gr/export_code/eortologio.php?fnt_clr=323338&tbl_wdth=100%25&tbl_brdrclr=FFFFFF&tbl_brd=0&td_bgclr=FFFFFF&tbl_cellpading=0&tbl_cellspacing=0&tbl_font=Arial&tbl_font_size=13&tbl_title_font_size=12&tbl_title_bgcolor=FFFFFF&tbl_title_font_color=676879&tbl_title=&morfi=3&what_day=1&ttl=0&fr1=0&fr2=0";
+  const [dateKey, setDateKey] = useState(() => getAthensDateKey());
+
+  const scriptUrl = useMemo(
+    () => `https://www.eortologio.gr/export_code/eortologio.php?fnt_clr=323338&tbl_wdth=100%25&tbl_brdrclr=FFFFFF&tbl_brd=0&td_bgclr=FFFFFF&tbl_cellpading=0&tbl_cellspacing=0&tbl_font=Arial&tbl_font_size=13&tbl_title_font_size=12&tbl_title_bgcolor=FFFFFF&tbl_title_font_color=676879&tbl_title=&morfi=3&what_day=1&ttl=0&fr1=0&fr2=0&celebrations_date=${encodeURIComponent(dateKey)}`,
+    [dateKey],
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const currentDateKey = getAthensDateKey();
+      setDateKey((previousDateKey) => previousDateKey === currentDateKey ? previousDateKey : currentDateKey);
+    }, 60_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    setNames(null);
+  }, [dateKey]);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
       const data = event.data as NamedaysMessage | undefined;
-      if (!data || data.type !== "celebrations:namedays" || !Array.isArray(data.names)) return;
+      if (
+        !data ||
+        data.type !== "celebrations:namedays" ||
+        data.dateKey !== dateKey ||
+        !Array.isArray(data.names)
+      ) return;
 
       const cleanNames = data.names
         .filter((name): name is string => typeof name === "string")
@@ -301,7 +338,7 @@ function EortologioToday() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [dateKey]);
 
   const srcDoc = `<!doctype html>
 <html lang="el">
@@ -313,6 +350,8 @@ function EortologioToday() {
 <script src="${scriptUrl}"><\/script>
 <script>
 (function(){
+  var dateKey = ${JSON.stringify(dateKey)};
+
   function cleanToken(value){
     return (value || '').replace(/\\s+/g, ' ').trim();
   }
@@ -358,7 +397,7 @@ function EortologioToday() {
   }
 
   function report(names){
-    window.parent.postMessage({ type: 'celebrations:namedays', names: names }, '*');
+    window.parent.postMessage({ type: 'celebrations:namedays', names: names, dateKey: dateKey }, '*');
   }
 
   var attempts = 0;
@@ -398,6 +437,7 @@ function EortologioToday() {
   return (
     <>
       <iframe
+        key={dateKey}
         title="namedays data source"
         aria-hidden="true"
         tabIndex={-1}
